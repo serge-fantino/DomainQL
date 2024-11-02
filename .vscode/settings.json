@@ -1,0 +1,6 @@
+{
+    "java.compile.nullAnalysis.mode": "automatic",
+    "java.project.explorer.showNonJavaResources": false,
+    "java.dependency.packagePresentation": "flat",
+    "java.configuration.updateBuildConfiguration": "interactive"
+}
