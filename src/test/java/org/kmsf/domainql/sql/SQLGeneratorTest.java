@@ -16,15 +16,13 @@ import org.kmsf.domainql.expression.type.ScalarType;
 import static org.junit.jupiter.api.Assertions.*;
 
 public class SQLGeneratorTest {
-    private SQLGenerator sqlGenerator;
+
     private Domain personDomain;
     private Domain companyDomain;
     private Domain departmentDomain;
 
     @BeforeEach
     void setUp() throws Exception {
-        sqlGenerator = new SQLGenerator();
-        
         // Set up domains
         personDomain = new Domain("person");
         companyDomain = new Domain("company");
@@ -102,7 +100,7 @@ public class SQLGeneratorTest {
         query.addProjection("employee_first_name", new AttributeExpression(personDomain.getAttribute("first_name")));
         query.addProjection("employee_salary", new AttributeExpression(personDomain.getAttribute("salary")));
 
-        String sql = sqlGenerator.generateSQL(query);
+        String sql = SQLGenerator.generateSQL(query);
         assertEquals("SELECT person.first_name AS employee_first_name, person.salary AS employee_salary FROM person", sql.trim());
     }
 
@@ -125,7 +123,7 @@ public class SQLGeneratorTest {
         );
         query.addProjection("employee_company_name", employee_company_name);
         
-        String sql = sqlGenerator.generateSQL(query);
+        String sql = SQLGenerator.generateSQL(query);
         assertEquals(
             "SELECT person.first_name AS employee, j1.name AS employee_company_name " +
             "FROM person " +
@@ -181,7 +179,7 @@ public class SQLGeneratorTest {
         );
         query.addProjection("city", companyCityExpr);
         
-        String sql = sqlGenerator.generateSQL(query);
+        String sql = SQLGenerator.generateSQL(query);
         assertEquals(
             "SELECT person.first_name AS employee, j1.name AS company, j2.city AS city " +
             "FROM person " +
@@ -210,7 +208,7 @@ public class SQLGeneratorTest {
             new LiteralExpression(100000.0)
         ));
         
-        String sql = sqlGenerator.generateSQL(query);
+        String sql = SQLGenerator.generateSQL(query);
         assertEquals(
             "SELECT j1.name AS company " +
             "FROM person " +
@@ -244,7 +242,7 @@ public class SQLGeneratorTest {
             new LiteralExpression("KMSF")
         ));
         
-        String sql = sqlGenerator.generateSQL(query);
+        String sql = SQLGenerator.generateSQL(query);
         assertEquals(
             "SELECT person.first_name AS employee, j1.name AS department, j2.name AS company " +
             "FROM person " +

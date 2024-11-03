@@ -4,6 +4,8 @@ import java.util.HashMap;
 import java.util.Map;
 
 import org.kmsf.domainql.expression.type.DomainType;
+import org.kmsf.domainql.expression.type.Operator;
+import org.kmsf.domainql.expression.type.ScalarType;
 
 public class Domain {
     private String name;
@@ -15,8 +17,29 @@ public class Domain {
         this.attributes = new HashMap<>();
     }
 
+    public void addAttribute(Attribute attribute) {
+        attributes.put(attribute.getName(), attribute);
+    }
+
     public void addAttribute(String name, Attribute attribute) {
         attributes.put(name, attribute);
+    }
+
+    public Attribute addAttribute(String name, ScalarType type) {
+        Attribute attribute = new Attribute(name, this, type);
+        attributes.put(name, attribute);
+        return attribute;
+    }
+
+    public ReferenceAttribute addReference(String name, String sourceReference, Domain targetDomain, String targetReference) {
+        Expression joinCondition = new BinaryExpression(
+            new AttributeExpression(getAttribute(sourceReference)),
+            Operator.EQUALS,
+            new AttributeExpression(targetDomain.getAttribute(targetReference))
+        );
+        ReferenceAttribute referenceAttribute = new ReferenceAttribute(name, this, targetDomain, joinCondition);
+        attributes.put(name, referenceAttribute);
+        return referenceAttribute;
     }
 
     public Attribute getAttribute(String name) {

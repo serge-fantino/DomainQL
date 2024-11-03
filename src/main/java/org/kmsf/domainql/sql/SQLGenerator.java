@@ -15,147 +15,139 @@ import org.kmsf.domainql.expression.type.*;
 import java.util.*;
 
 public class SQLGenerator {
-
+    private final Query query;
+    private final Map<JoinInfo, String> joinAliases = new HashMap<>();
     private int aliasCounter = 0;
     private int subqueryCounter = 0;
-    
-        public String generateSQL(Query query) {
-            StringBuilder sql = new StringBuilder("SELECT ");
-            Set<JoinInfo> joins = new LinkedHashSet<>();
-            
-            // Generate projections
-            generateProjections(query, sql, joins);
-            
-            // Generate FROM clause with necessary JOINs
-            sql.append(" FROM ");
-            generateFromClause(query, sql, joins);
-            
-            // Add JOINs
-            for (JoinInfo join : joins) {
-                sql.append(" JOIN ")
-                   .append(join.targetDomain.getName())
-                   .append(" ON ");
-                generateExpression(join.condition, sql, joins);
-                sql.append(" AS ")
-                   .append(join.alias);
-            }
-    
-            // Generate WHERE clause if filter exists
-            if (query.getFilter() != null) {
-                sql.append(" WHERE ");
-                generateExpression(query.getFilter(), sql, joins);
-            }
-    
-            // Generate GROUP BY if needed
-            if (needsGroupBy(query)) {
-                sql.append(" GROUP BY ");
-                generateGroupByClause(query, sql);
-            }
-    
-            return sql.toString();
-        }
-    
-        private void generateProjections(Query query, StringBuilder sql, Set<JoinInfo> joins) {
-            boolean first = true;
-            for (Map.Entry<String, Expression> projection : query.getProjections().entrySet()) {
-                if (!first) sql.append(", ");
-                generateExpression(projection.getValue(), sql, joins);
-                sql.append(" AS ").append(projection.getKey());
-                first = false;
-            }
-        }
-    
-        private void generateExpression(Expression expr, StringBuilder sql, Set<JoinInfo> joins) {
-            if (expr instanceof ComposeExpression) {
-                ComposeExpression compose = (ComposeExpression) expr;
-                Expression reference = compose.getReference();
-                
-                // Handle the reference part (which should be an AttributeExpression with ReferenceAttribute)
-                if (reference instanceof AttributeExpression) {
-                    AttributeExpression attrExpr = (AttributeExpression) reference;
-                    if (attrExpr.getAttribute() instanceof ReferenceAttribute) {
-                        ReferenceAttribute refAttr = (ReferenceAttribute) attrExpr.getAttribute();
-                        String joinAlias = "j" + (++aliasCounter);
-                        
-                        // Add join info for reference attribute
-                        joins.add(new JoinInfo(
-                            refAttr.getReferenceDomain(),
-                            refAttr.getJoinCondition(),
-                            joinAlias
-                        ));
-                        
-                        // Generate the composition part using the join alias
-                        Expression composition = compose.getComposition();
-                        if (composition instanceof AttributeExpression) {
-                            AttributeExpression compAttr = (AttributeExpression) composition;
-                            sql.append(joinAlias)
-                               .append(".")
-                               .append(compAttr.getAttribute().getName());
-                        } else {
-                            // Handle other types of composition expressions
-                            generateExpression(composition, sql, joins);
-                        }
-                    }
-                }
-            } else if (expr instanceof AttributeExpression) {
-                AttributeExpression attrExpr = (AttributeExpression) expr;
-                Attribute attr = attrExpr.getAttribute();
-                
-                if (attr instanceof ReferenceAttribute) {
-                    ReferenceAttribute refAttr = (ReferenceAttribute) attr;
-                    // Add join info for reference attribute
-                    joins.add(new JoinInfo(
-                        refAttr.getReferenceDomain(),
-                        refAttr.getJoinCondition(),
-                        "j" + (++aliasCounter)
-                    ));
-                }
-                
-                sql.append(attr.getDomain().getName())
-                   .append(".")
-                   .append(attr.getName());
-            } else if (expr instanceof BinaryExpression) {
-                generateBinaryExpression((BinaryExpression) expr, sql, joins);
-            } else if (expr instanceof AggregateExpression) {
-                generateAggregateExpression((AggregateExpression) expr, sql, joins);
-            } else if (expr instanceof QueryExpression) {
-                generateQueryExpression((QueryExpression) expr, sql);
-            } else if (expr instanceof LiteralExpression) {
-                generateLiteralExpression((LiteralExpression) expr, sql);
-            }
+
+    public SQLGenerator(Query query) {
+        this.query = query;
+    }
+
+    public static String generateSQL(Query query) {
+        SQLGenerator generator = new SQLGenerator(query);
+        return generator.generateSQL();
+    }
+
+    public String generateSQL() {
+        StringBuilder sql = new StringBuilder("SELECT ");
+        Set<JoinInfo> joins = new LinkedHashSet<>();
+        
+        // Generate projections
+        generateProjections(sql, joins);
+        
+        // Generate FROM clause with necessary JOINs
+        generateFromClause(query, sql, joins);
+        // Add JOINs
+        for (JoinInfo join : joins) {
+            sql.append(" JOIN ")
+               .append(join.referenceAttribute.getReferenceDomain().getName())
+               .append(" AS ")
+               .append(join.alias)
+               .append(" ON ");
+            generateExpression(join.referenceAttribute.getJoinCondition(), join.referenceAttribute, sql, joins);
         }
 
-        private void generateLiteralExpression(LiteralExpression expr, StringBuilder sql) {
-            ExpressionType type = expr.getType();
-            if (type instanceof ScalarType) {
-                ScalarType scalarType = (ScalarType) type;
-                if (scalarType.equals(ScalarType.STRING)) {
-                    sql.append("'").append(expr.getValue()).append("'");
-                } else if (scalarType.equals(ScalarType.DATE)) {
-                    sql.append("to_date('").append(expr.getValue().toString()).append("', 'YYYY-MM-DD')");
-                } else {
-                    sql.append(expr.getValue());
-                }
-            } else {
-                throw new IllegalArgumentException("Unsupported literal type: " + type);
-            }
+        // Generate WHERE clause if filter exists
+        if (query.getFilter() != null) {
+            sql.append(" WHERE ");
+            generateExpression(query.getFilter(), null, sql, joins);
         }
+
+        // Generate GROUP BY if needed
+        if (needsGroupBy(query)) {
+            sql.append(" GROUP BY ");
+            generateGroupByClause(query, sql, joins);
+        }
+
+        return sql.toString();
+    }
+
+    private void generateProjections(StringBuilder sql, Set<JoinInfo> joins) {
+        boolean first = true;
+        for (Map.Entry<String, Expression> projection : query.getProjections().entrySet()) {
+            if (!first) sql.append(", ");
+            generateExpression(projection.getValue(), null, sql, joins);
+            sql.append(" AS ").append(projection.getKey());
+            first = false;
+        }
+    }
+
+    private void generateExpression(Expression expr, ReferenceAttribute context, StringBuilder sql, Set<JoinInfo> joins) {
+        if (expr instanceof ComposeExpression) {
+            ComposeExpression compose = (ComposeExpression) expr;
+            Expression reference = compose.getReference();
+            
+            if (reference instanceof AttributeExpression) {
+                AttributeExpression attrExpr = (AttributeExpression) reference;
+                if (attrExpr.getAttribute() instanceof ReferenceAttribute) {
+                    ReferenceAttribute refAttr = (ReferenceAttribute) attrExpr.getAttribute();
+                    String joinAlias = getOrCreateJoinAlias(refAttr);
+                    
+                    joins.add(new JoinInfo(refAttr, joinAlias));
+                    
+                    // Pass the reference attribute as context for the composition
+                    Expression composition = compose.getComposition();
+                    generateExpression(composition, refAttr, sql, joins);
+                }
+            }
+        } else if (expr instanceof AttributeExpression) {
+            AttributeExpression attrExpr = (AttributeExpression) expr;
+            Attribute attr = attrExpr.getAttribute();
+            
+            if (context != null) {
+                // We're in a composed context, use the join alias
+                String joinAlias = getOrCreateJoinAlias(context);
+                sql.append(joinAlias);
+            } else {
+                // We're at root level, use base alias
+                sql.append("base");
+            }
+            sql.append(".")
+               .append(attr.getName());
+        } else if (expr instanceof BinaryExpression) {
+            generateBinaryExpression((BinaryExpression) expr, context, sql, joins);
+        } else if (expr instanceof AggregateExpression) {
+            generateAggregateExpression((AggregateExpression) expr, context, sql, joins);
+        } else if (expr instanceof QueryExpression) {
+            generateQueryExpression((QueryExpression) expr, sql);
+        } else if (expr instanceof LiteralExpression) {
+            generateLiteralExpression((LiteralExpression) expr, sql);
+        }
+    }
+
+    private void generateLiteralExpression(LiteralExpression expr, StringBuilder sql) {
+        ExpressionType type = expr.getType();
+        if (type instanceof ScalarType) {
+            ScalarType scalarType = (ScalarType) type;
+            if (scalarType.equals(ScalarType.STRING)) {
+                sql.append("'").append(expr.getValue()).append("'");
+            } else if (scalarType.equals(ScalarType.DATE)) {
+                sql.append("to_date('").append(expr.getValue().toString()).append("', 'YYYY-MM-DD')");
+            } else {
+                sql.append(expr.getValue());
+            }
+        } else {
+            throw new IllegalArgumentException("Unsupported literal type: " + type);
+        }
+    }
     
-        private void generateQueryExpression(QueryExpression expr, StringBuilder sql) {
-            String subqueryAlias = "sq" + (++subqueryCounter);
+    private void generateQueryExpression(QueryExpression expr, StringBuilder sql) {
+        String subqueryAlias = "sq" + (++subqueryCounter);
+        SQLGenerator subqueryGenerator = new SQLGenerator(expr.getQuery());
         sql.append("(")
-           .append(generateSQL(expr.getQuery()))
+           .append(subqueryGenerator.generateSQL())
            .append(") AS ")
            .append(subqueryAlias);
     }
     
-    private void generateBinaryExpression(BinaryExpression expr, StringBuilder sql, Set<JoinInfo> joins) {
+    private void generateBinaryExpression(BinaryExpression expr, ReferenceAttribute context, StringBuilder sql, Set<JoinInfo> joins) {
         sql.append("(");
-        generateExpression(expr.getLeft(), sql, joins);
+        generateExpression(expr.getLeft(), context, sql, joins);
         sql.append(" ")
            .append(getBinaryOperator(expr.getOperator()))
            .append(" ");
-        generateExpression(expr.getRight(), sql, joins);
+        generateExpression(expr.getRight(), context, sql, joins);
         sql.append(")");
     }
 
@@ -181,15 +173,16 @@ public class SQLGenerator {
     }
 
     private void generateFromClause(Query query, StringBuilder sql, Set<JoinInfo> joins) {
+        sql.append(" FROM ");
         if (query.getSourceDomain() instanceof Query) {
             // Handle case where source is another query
-            String subqueryAlias = "sq" + (++subqueryCounter);
+            SQLGenerator subqueryGenerator = new SQLGenerator((Query) query.getSourceDomain());
             sql.append("(")
-               .append(generateSQL((Query) query.getSourceDomain()))
-               .append(") AS ")
-               .append(subqueryAlias);
+               .append(subqueryGenerator.generateSQL())
+               .append(") AS base");
         } else {
-            sql.append(query.getSourceDomain().getName());
+            sql.append(query.getSourceDomain().getName())
+            .append(" AS base");
         }
     }
 
@@ -209,32 +202,35 @@ public class SQLGenerator {
         return hasAggregate && hasNonAggregate;
     }
 
-    private void generateGroupByClause(Query query, StringBuilder sql) {
+    private void generateGroupByClause(Query query, StringBuilder sql, Set<JoinInfo> joins) {
         boolean first = true;
         for (Expression expr : query.getProjections().values()) {
             if (!expr.getType().isAggregate()) {
                 if (!first) sql.append(", ");
-                generateExpression(expr, sql, new HashSet<>());
+                generateExpression(expr, null, sql, joins);
                 first = false;
             }
         }
     }
 
-    private void generateAggregateExpression(AggregateExpression expr, StringBuilder sql, Set<JoinInfo> joins) {
+    private void generateAggregateExpression(AggregateExpression expr, ReferenceAttribute context, StringBuilder sql, Set<JoinInfo> joins) {
         sql.append(expr.getFunction().name())
            .append("(");
-        generateExpression(expr.getOperand(), sql, joins);
+        generateExpression(expr.getOperand(), context, sql, joins);
         sql.append(")");
     }
 
+    private String getOrCreateJoinAlias(ReferenceAttribute referenceAttribute) {
+        JoinInfo joinInfo = new JoinInfo(referenceAttribute, null);
+        return joinAliases.computeIfAbsent(joinInfo, ji -> "j" + (++aliasCounter));
+    }
+
     private static class JoinInfo {
-        final Domain targetDomain;
-        final Expression condition;
+        final ReferenceAttribute referenceAttribute;
         final String alias;
 
-        JoinInfo(Domain targetDomain, Expression condition, String alias) {
-            this.targetDomain = targetDomain;
-            this.condition = condition;
+        JoinInfo(ReferenceAttribute referenceAttribute, String alias) {
+            this.referenceAttribute = referenceAttribute;
             this.alias = alias;
         }
 
@@ -243,13 +239,14 @@ public class SQLGenerator {
             if (this == o) return true;
             if (!(o instanceof JoinInfo)) return false;
             JoinInfo joinInfo = (JoinInfo) o;
-            return targetDomain.equals(joinInfo.targetDomain) &&
-                   condition.equals(joinInfo.condition);
+            // Alias is not part of equality
+            return referenceAttribute.equals(joinInfo.referenceAttribute);
         }
 
         @Override
         public int hashCode() {
-            return Objects.hash(targetDomain, condition);
+            // Alias is not part of hash
+            return Objects.hash(referenceAttribute);
         }
     }
 } 
