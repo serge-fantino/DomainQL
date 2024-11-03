@@ -33,6 +33,9 @@ public class ReferenceAttribute extends Attribute {
             DomainType right = crossDomain.getRightDomain();
             return (left.getDomain().equals(sourceDomain) && right.getDomain().equals(targetDomain)) ||
                    (left.getDomain().equals(targetDomain) && right.getDomain().equals(sourceDomain));
+        } else if (source instanceof DomainType && sourceDomain.equals(targetDomain)) {
+            DomainType domain = (DomainType) source;
+            return domain.getDomain().equals(sourceDomain);
         }
         return false;
     }

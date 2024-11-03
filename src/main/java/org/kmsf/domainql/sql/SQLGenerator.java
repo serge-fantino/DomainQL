@@ -45,7 +45,7 @@ public class SQLGenerator {
         // Generate WHERE clause if filter exists
         if (query.getFilter() != null) {
             sql.append(" WHERE ");
-            generateExpression(query.getFilter(), rootPath, sql);
+            generateExpression(query.getFilter(), new SimplePathResolver(rootPath), sql);
         }
 
         // Generate GROUP BY if needed
@@ -61,13 +61,13 @@ public class SQLGenerator {
         boolean first = true;
         for (Map.Entry<String, Expression> projection : query.getProjections().entrySet()) {
             if (!first) sql.append(", ");
-            generateExpression(projection.getValue(), rootPath, sql);
+            generateExpression(projection.getValue(), new SimplePathResolver(rootPath), sql);
             sql.append(" AS ").append(projection.getKey());
             first = false;
         }
     }
 
-    private void generateExpression(Expression expr, DomainPath currentPath, StringBuilder sql) {
+    private void generateExpression(Expression expr, PathResolver pathResolver, StringBuilder sql) {
         if (expr instanceof ComposeExpression) {
             ComposeExpression compose = (ComposeExpression) expr;
             Expression reference = compose.getReference();
@@ -76,24 +76,26 @@ public class SQLGenerator {
                 AttributeExpression attrExpr = (AttributeExpression) reference;
                 if (attrExpr.getAttribute() instanceof ReferenceAttribute) {
                     ReferenceAttribute refAttr = (ReferenceAttribute) attrExpr.getAttribute();
+                    DomainPath currentPath = pathResolver.resolve(attrExpr);
                     DomainPath newPath = new DomainPath(refAttr.getReferenceDomain(), currentPath, refAttr);
                     joinContext.getOrCreateAlias(newPath);
-                    generateExpression(compose.getComposition(), newPath, sql);
+                    generateExpression(compose.getComposition(), new SimplePathResolver(newPath), sql);
                     return;
                 }
             }
         } else if (expr instanceof AttributeExpression) {
             AttributeExpression attrExpr = (AttributeExpression) expr;
-            String alias = joinContext.getOrCreateAlias(currentPath);
+            DomainPath path = pathResolver.resolve(attrExpr);
+            String alias = joinContext.getOrCreateAlias(path);
             
             sql.append(alias)
                .append(".")
                .append(attrExpr.getAttribute().getName());
             return;
         } else if (expr instanceof BinaryExpression) {
-            generateBinaryExpression((BinaryExpression) expr, currentPath, sql);
+            generateBinaryExpression((BinaryExpression) expr, pathResolver, sql);
         } else if (expr instanceof AggregateExpression) {
-            generateAggregateExpression((AggregateExpression) expr, currentPath, sql);
+            generateAggregateExpression((AggregateExpression) expr, pathResolver, sql);
         } else if (expr instanceof QueryExpression) {
             generateQueryExpression((QueryExpression) expr, sql);
         } else if (expr instanceof LiteralExpression) {
@@ -126,13 +128,13 @@ public class SQLGenerator {
            .append(subqueryAlias);
     }
     
-    private void generateBinaryExpression(BinaryExpression expr, DomainPath currentPath, StringBuilder sql) {
+    private void generateBinaryExpression(BinaryExpression expr, PathResolver pathResolver, StringBuilder sql) {
         sql.append("(");
-        generateExpression(expr.getLeft(), currentPath, sql);
+        generateExpression(expr.getLeft(), pathResolver, sql);
         sql.append(" ")
            .append(getBinaryOperator(expr.getOperator()))
            .append(" ");
-        generateExpression(expr.getRight(), currentPath, sql);
+        generateExpression(expr.getRight(), pathResolver, sql);
         sql.append(")");
     }
 
@@ -166,7 +168,9 @@ public class SQLGenerator {
                 sql.append(" JOIN ");
                 generateTableNameAndAlias(path, alias, sql);
                 sql.append(" ON ");
-                generateExpression(path.reference.getJoinCondition(), path, sql);
+                generateExpression(path.reference.getJoinCondition(), 
+                                   new JoinPathResolver(path.parent, path), 
+                                   sql);
             }
         });
     }
@@ -199,16 +203,16 @@ public class SQLGenerator {
         for (Expression expr : query.getProjections().values()) {
             if (!expr.getType().isAggregate()) {
                 if (!first) sql.append(", ");
-                generateExpression(expr, rootPath, sql);
+                generateExpression(expr, new SimplePathResolver(rootPath), sql);
                 first = false;
             }
         }
     }
 
-    private void generateAggregateExpression(AggregateExpression expr, DomainPath currentPath, StringBuilder sql) {
+    private void generateAggregateExpression(AggregateExpression expr, PathResolver pathResolver, StringBuilder sql) {
         sql.append(expr.getFunction().name())
            .append("(");
-        generateExpression(expr.getOperand(), currentPath, sql);
+        generateExpression(expr.getOperand(), pathResolver, sql);
         sql.append(")");
     }
 
@@ -283,4 +287,47 @@ public class SQLGenerator {
             return domainAliases.size();
         }
     }
+
+    public interface PathResolver {
+        DomainPath resolve(AttributeExpression expr);
+    }
+    
+    public static class SimplePathResolver implements PathResolver {
+        private final DomainPath currentPath;
+    
+        public SimplePathResolver(DomainPath currentPath) {
+            this.currentPath = currentPath;
+        }
+    
+        @Override
+        public DomainPath resolve(AttributeExpression expr) {
+            return currentPath; // We know the expression's source type is compatible
+        }
+    }
+    
+    public static class JoinPathResolver implements PathResolver {
+        private final DomainPath leftPath;
+        private final DomainPath rightPath;
+    
+        public JoinPathResolver(DomainPath leftPath, DomainPath rightPath) {
+            this.leftPath = leftPath;
+            this.rightPath = rightPath;
+        }
+    
+        @Override
+        public DomainPath resolve(AttributeExpression expr) {
+            switch (expr.getContextResolution()) {
+                case LEFT: return leftPath;
+                case RIGHT: return rightPath;
+                case DEFAULT: 
+                    Domain attrDomain = expr.getAttribute().getDomain();
+                    if (attrDomain.equals(leftPath.domain)) return leftPath;
+                    if (attrDomain.equals(rightPath.domain)) return rightPath;
+                    throw new IllegalStateException(
+                        "Attribute domain " + attrDomain + " doesn't match either side of the join"
+                    );
+            }
+            throw new IllegalStateException("Unknown context resolution: " + expr.getContextResolution());
+        }
+    } 
 } 

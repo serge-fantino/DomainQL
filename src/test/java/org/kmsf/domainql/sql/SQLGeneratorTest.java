@@ -7,6 +7,7 @@ import org.kmsf.domainql.expression.Domain;
 import org.kmsf.domainql.expression.LiteralExpression;
 import org.kmsf.domainql.expression.ComposeExpression;
 import org.kmsf.domainql.expression.Query;
+import org.kmsf.domainql.expression.QueryBuilder;
 import org.kmsf.domainql.expression.ReferenceAttribute;
 import org.kmsf.domainql.expression.type.Operator;
 
@@ -90,66 +91,63 @@ public class SQLGeneratorTest {
         
         String sql = SQLGenerator.generateSQL(query);
         assertEquals(
-            "SELECT person.first_name AS employee, j1.name AS employee_company_name " +
+            "SELECT person.first_name AS employee, works_for.name AS employee_company_name " +
             "FROM person " +
-            "JOIN company ON (person.company_id = company.id) AS j1",
+            "JOIN company AS works_for ON (person.company_id = works_for.id)",
+            sql.trim()
+        );
+    }
+
+    @Test
+    void testSelfJoinWithAutomaticContextResolution() {
+        // Setup employee domain with self-reference
+        Domain employeeDomain = new Domain("employee");
+        employeeDomain.addAttribute("id", ScalarType.INTEGER);
+        employeeDomain.addAttribute("name", ScalarType.STRING);
+        employeeDomain.addAttribute("manager_id", ScalarType.INTEGER);
+
+        // Add self-reference - the method will automatically handle the context resolution
+        employeeDomain.addReference("manager", "manager_id", employeeDomain, "id");
+
+        // Create query using QueryBuilder
+        Query query = QueryBuilder.from("employee_managers", employeeDomain)
+            .select("employee_name", "name")
+            .select("manager_name", "manager.name")
+            .build();
+
+        String sql = SQLGenerator.generateSQL(query);
+        assertEquals(
+            "SELECT employee.name AS employee_name, manager.name AS manager_name " +
+            "FROM employee " +
+            "JOIN employee AS manager ON (employee.manager_id = manager.id)",
             sql.trim()
         );
     }
 
     @Test
     void testNestedComposeExpression() {
-        // Setup additional domains and attributes
+        // Setup address domain
         Domain addressDomain = new Domain("address");
-        addressDomain.addAttribute("id", new Attribute("id", addressDomain, ScalarType.INTEGER));
-        addressDomain.addAttribute("city", new Attribute("city", addressDomain, ScalarType.STRING));
+        addressDomain.addAttribute("id", ScalarType.INTEGER);
+        addressDomain.addAttribute("city", ScalarType.STRING);
         
-        // Add address reference to company
-        BinaryExpression addressJoin = new BinaryExpression(
-            new AttributeExpression(new Attribute("address_id", companyDomain, ScalarType.INTEGER)),
-            Operator.EQUALS,
-            new AttributeExpression(addressDomain.getAttribute("id"))
-        );
-        
-        ReferenceAttribute hasAddress = new ReferenceAttribute(
-            "address",
-            companyDomain,
-            addressDomain,
-            addressJoin
-        );
-        companyDomain.addAttribute("address", hasAddress);
-        
-        // Create query with nested compose expressions
-        Query query = new Query("employee_locations", personDomain);
-        
-        // Add person's name
-        query.addProjection("employee", new AttributeExpression(
-            personDomain.getAttribute("first_name")
-        ));
-        
-        // Add company name through composition
-        ComposeExpression companyNameExpr = new ComposeExpression(
-            new AttributeExpression(personDomain.getAttribute("works_for")),
-            new AttributeExpression(companyDomain.getAttribute("name"))
-        );
-        query.addProjection("company", companyNameExpr);
-        
-        // Add company's city through nested composition
-        ComposeExpression companyCityExpr = new ComposeExpression(
-            new AttributeExpression(personDomain.getAttribute("works_for")),
-            new ComposeExpression(
-                new AttributeExpression(companyDomain.getAttribute("address")),
-                new AttributeExpression(addressDomain.getAttribute("city"))
-            )
-        );
-        query.addProjection("city", companyCityExpr);
-        
+        // Add address reference to company domain
+        companyDomain.addAttribute("address_id", ScalarType.INTEGER);
+        companyDomain.addReference("address", "address_id", addressDomain, "id");
+
+        // Create query using QueryBuilder
+        Query query = QueryBuilder.from("employee_locations", personDomain)
+            .select("employee", "first_name")
+            .select("company", "works_for.name")
+            .select("city", "works_for.address.city")
+            .build();
+
         String sql = SQLGenerator.generateSQL(query);
         assertEquals(
-            "SELECT person.first_name AS employee, j1.name AS company, j2.city AS city " +
+            "SELECT person.first_name AS employee, works_for.name AS company, address.city AS city " +
             "FROM person " +
-            "JOIN company ON (person.company_id = company.id) AS j1 " +
-            "JOIN address ON (j1.address_id = address.id) AS j2",
+            "JOIN company AS works_for ON (person.company_id = works_for.id)" +
+            "JOIN address AS address ON (works_for.address_id = address.id)",
             sql.trim()
         );
     }
@@ -217,4 +215,5 @@ public class SQLGeneratorTest {
             sql.trim()
         );
     }
+
 } 

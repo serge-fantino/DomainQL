@@ -4,15 +4,31 @@ import org.kmsf.domainql.expression.type.ExpressionType;
 import org.kmsf.domainql.expression.type.SourceType;
 
 public class AttributeExpression implements Expression {
-    
-    private Attribute attribute;
+
+    public enum ContextResolution {
+        DEFAULT,  // use attribute's domain
+        LEFT,     // use left side of join
+        RIGHT     // use right side of join
+    }
+
+    private final Attribute attribute;
+    private final ContextResolution contextResolution;
 
     public AttributeExpression(Attribute attribute) {
+        this(attribute, ContextResolution.DEFAULT);
+    }
+
+    public AttributeExpression(Attribute attribute, ContextResolution contextResolution) {
         this.attribute = attribute;
+        this.contextResolution = contextResolution;
     }
 
     public Attribute getAttribute() {
         return attribute;
+    }
+
+    public ContextResolution getContextResolution() {
+        return contextResolution;
     }
 
     @Override

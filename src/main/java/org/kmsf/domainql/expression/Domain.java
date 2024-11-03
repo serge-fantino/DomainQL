@@ -32,11 +32,23 @@ public class Domain {
     }
 
     public ReferenceAttribute addReference(String name, String sourceReference, Domain targetDomain, String targetReference) {
-        Expression joinCondition = new BinaryExpression(
-            new AttributeExpression(getAttribute(sourceReference)),
-            Operator.EQUALS,
-            new AttributeExpression(targetDomain.getAttribute(targetReference))
-        );
+        Expression joinCondition;
+        if (this.equals(targetDomain)) {
+            // Self-join case: use explicit LEFT/RIGHT context resolution
+            joinCondition = new BinaryExpression(
+                new AttributeExpression(getAttribute(sourceReference), AttributeExpression.ContextResolution.LEFT),
+                Operator.EQUALS,
+                new AttributeExpression(targetDomain.getAttribute(targetReference), AttributeExpression.ContextResolution.RIGHT)
+            );
+        } else {
+            // Regular join case: use default context resolution
+            joinCondition = new BinaryExpression(
+                    new AttributeExpression(getAttribute(sourceReference)),
+                Operator.EQUALS,
+                new AttributeExpression(targetDomain.getAttribute(targetReference))
+            );
+        }
+        
         ReferenceAttribute referenceAttribute = new ReferenceAttribute(name, this, targetDomain, joinCondition);
         attributes.put(name, referenceAttribute);
         return referenceAttribute;
