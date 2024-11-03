@@ -25,73 +25,38 @@ public class SQLGeneratorTest {
     void setUp() throws Exception {
         // Set up domains
         personDomain = new Domain("person");
-        companyDomain = new Domain("company");
+        companyDomain = new Domain("company"); 
         departmentDomain = new Domain("department");
 
         // Set up scalar attributes
-        personDomain.addAttribute("id", new Attribute("id", personDomain, ScalarType.INTEGER));
-        personDomain.addAttribute("first_name", new Attribute("first_name", personDomain, 
-            ScalarType.STRING));
-        personDomain.addAttribute("salary", new Attribute("salary", personDomain, 
-            ScalarType.DECIMAL));
-        personDomain.addAttribute("company_id", new Attribute("company_id", personDomain, 
-                ScalarType.DECIMAL));
-        personDomain.addAttribute("department_id", new Attribute("department_id", personDomain,
-                ScalarType.INTEGER));
+        personDomain.addAttribute("id", ScalarType.INTEGER);
+        personDomain.addAttribute("first_name", ScalarType.STRING);
+        personDomain.addAttribute("salary", ScalarType.DECIMAL);
+        personDomain.addAttribute("company_id", ScalarType.DECIMAL);
+        personDomain.addAttribute("department_id", ScalarType.INTEGER);
 
-        companyDomain.addAttribute("id", new Attribute("id", companyDomain, 
-            ScalarType.INTEGER));
-        companyDomain.addAttribute("name", new Attribute("name", companyDomain, 
-            ScalarType.STRING));
+        companyDomain.addAttribute("id", ScalarType.INTEGER);
+        companyDomain.addAttribute("name", ScalarType.STRING);
 
-        departmentDomain.addAttribute("id", new Attribute("id", departmentDomain,
-            ScalarType.INTEGER));
-        departmentDomain.addAttribute("name", new Attribute("name", departmentDomain,
-            ScalarType.STRING));
-        departmentDomain.addAttribute("company_id", new Attribute("company_id", departmentDomain,
-            ScalarType.INTEGER));
+        departmentDomain.addAttribute("id", ScalarType.INTEGER);
+        departmentDomain.addAttribute("name", ScalarType.STRING);
+        departmentDomain.addAttribute("company_id", ScalarType.INTEGER);
 
-        // Set up reference attributes with custom join conditions
-        BinaryExpression worksForJoin = new BinaryExpression(
-            new AttributeExpression(personDomain.getAttribute("company_id")),
-            Operator.EQUALS,
-            new AttributeExpression(companyDomain.getAttribute("id"))
-        );
-        ReferenceAttribute worksFor = new ReferenceAttribute(
-            "works_for", 
-            personDomain, 
-            companyDomain, 
-            worksForJoin
-        );
-        personDomain.addAttribute("works_for", worksFor);
+        // Set up references with join conditions
+        personDomain.addReference("works_for", "company_id", companyDomain, "id");
+        departmentDomain.addReference("company", "company_id", companyDomain, "id");
+        personDomain.addReference("department", "department_id", departmentDomain, "id");
+    }
 
-        // Add department to company reference
-        BinaryExpression departmentCompanyJoin = new BinaryExpression(
-            new AttributeExpression(departmentDomain.getAttribute("company_id")),
-            Operator.EQUALS, 
-            new AttributeExpression(companyDomain.getAttribute("id"))
-        );
-        ReferenceAttribute belongsToCompany = new ReferenceAttribute(
-            "company",
-            departmentDomain,
-            companyDomain,
-            departmentCompanyJoin
-        );
-        departmentDomain.addAttribute("company", belongsToCompany);
-
-        // Add person to department reference
-        BinaryExpression personDepartmentJoin = new BinaryExpression(
-            new AttributeExpression(personDomain.getAttribute("department_id")),
-            Operator.EQUALS,
-            new AttributeExpression(departmentDomain.getAttribute("id"))
-        );
-        ReferenceAttribute worksInDepartment = new ReferenceAttribute(
-            "department",
-            personDomain,
-            departmentDomain,
-            personDepartmentJoin
-        );
-        personDomain.addAttribute("department", worksInDepartment);
+    @Test
+    void testJoinContext() {
+        SQLGenerator.JoinContext joinContext = new SQLGenerator.JoinContext();
+        joinContext.getOrCreateAlias(new SQLGenerator.DomainPath(companyDomain, null, null));
+        assertEquals(1, joinContext.getAliasCount());
+        joinContext.forEachJoin((path, alias) -> {
+            assertEquals(companyDomain, path.domain);
+            assertEquals(companyDomain.getName(), alias);
+        });
     }
 
     @Test 

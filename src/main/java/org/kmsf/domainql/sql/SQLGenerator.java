@@ -1,7 +1,6 @@
 package org.kmsf.domainql.sql;
 
 import org.kmsf.domainql.expression.AggregateExpression;
-import org.kmsf.domainql.expression.Attribute;
 import org.kmsf.domainql.expression.AttributeExpression;
 import org.kmsf.domainql.expression.BinaryExpression;
 import org.kmsf.domainql.expression.ComposeExpression;
@@ -13,15 +12,16 @@ import org.kmsf.domainql.expression.QueryExpression;
 import org.kmsf.domainql.expression.ReferenceAttribute;
 import org.kmsf.domainql.expression.type.*;
 import java.util.*;
+import java.util.function.BiConsumer;
 
 public class SQLGenerator {
     private final Query query;
-    private final Map<JoinInfo, String> joinAliases = new HashMap<>();
-    private int aliasCounter = 0;
+    private final JoinContext joinContext;
     private int subqueryCounter = 0;
 
     public SQLGenerator(Query query) {
         this.query = query;
+        this.joinContext = new JoinContext();
     }
 
     public static String generateSQL(Query query) {
@@ -31,49 +31,43 @@ public class SQLGenerator {
 
     public String generateSQL() {
         StringBuilder sql = new StringBuilder("SELECT ");
-        Set<JoinInfo> joins = new LinkedHashSet<>();
-        
+
+        // initialize the root path
+        DomainPath rootPath = new DomainPath(query.getSourceDomain());
+        joinContext.getOrCreateAlias(rootPath);
+
         // Generate projections
-        generateProjections(sql, joins);
+        generateProjections(sql, rootPath);
         
         // Generate FROM clause with necessary JOINs
-        generateFromClause(query, sql, joins);
-        // Add JOINs
-        for (JoinInfo join : joins) {
-            sql.append(" JOIN ")
-               .append(join.referenceAttribute.getReferenceDomain().getName())
-               .append(" AS ")
-               .append(join.alias)
-               .append(" ON ");
-            generateExpression(join.referenceAttribute.getJoinCondition(), join.referenceAttribute, sql, joins);
-        }
+        generateFromClause(query, sql);
 
         // Generate WHERE clause if filter exists
         if (query.getFilter() != null) {
             sql.append(" WHERE ");
-            generateExpression(query.getFilter(), null, sql, joins);
+            generateExpression(query.getFilter(), rootPath, sql);
         }
 
         // Generate GROUP BY if needed
         if (needsGroupBy(query)) {
             sql.append(" GROUP BY ");
-            generateGroupByClause(query, sql, joins);
+            generateGroupByClause(query, rootPath, sql);
         }
 
         return sql.toString();
     }
 
-    private void generateProjections(StringBuilder sql, Set<JoinInfo> joins) {
+    private void generateProjections(StringBuilder sql, DomainPath rootPath) {
         boolean first = true;
         for (Map.Entry<String, Expression> projection : query.getProjections().entrySet()) {
             if (!first) sql.append(", ");
-            generateExpression(projection.getValue(), null, sql, joins);
+            generateExpression(projection.getValue(), rootPath, sql);
             sql.append(" AS ").append(projection.getKey());
             first = false;
         }
     }
 
-    private void generateExpression(Expression expr, ReferenceAttribute context, StringBuilder sql, Set<JoinInfo> joins) {
+    private void generateExpression(Expression expr, DomainPath currentPath, StringBuilder sql) {
         if (expr instanceof ComposeExpression) {
             ComposeExpression compose = (ComposeExpression) expr;
             Expression reference = compose.getReference();
@@ -82,33 +76,24 @@ public class SQLGenerator {
                 AttributeExpression attrExpr = (AttributeExpression) reference;
                 if (attrExpr.getAttribute() instanceof ReferenceAttribute) {
                     ReferenceAttribute refAttr = (ReferenceAttribute) attrExpr.getAttribute();
-                    String joinAlias = getOrCreateJoinAlias(refAttr);
-                    
-                    joins.add(new JoinInfo(refAttr, joinAlias));
-                    
-                    // Pass the reference attribute as context for the composition
-                    Expression composition = compose.getComposition();
-                    generateExpression(composition, refAttr, sql, joins);
+                    DomainPath newPath = new DomainPath(refAttr.getReferenceDomain(), currentPath, refAttr);
+                    joinContext.getOrCreateAlias(newPath);
+                    generateExpression(compose.getComposition(), newPath, sql);
+                    return;
                 }
             }
         } else if (expr instanceof AttributeExpression) {
             AttributeExpression attrExpr = (AttributeExpression) expr;
-            Attribute attr = attrExpr.getAttribute();
+            String alias = joinContext.getOrCreateAlias(currentPath);
             
-            if (context != null) {
-                // We're in a composed context, use the join alias
-                String joinAlias = getOrCreateJoinAlias(context);
-                sql.append(joinAlias);
-            } else {
-                // We're at root level, use base alias
-                sql.append("base");
-            }
-            sql.append(".")
-               .append(attr.getName());
+            sql.append(alias)
+               .append(".")
+               .append(attrExpr.getAttribute().getName());
+            return;
         } else if (expr instanceof BinaryExpression) {
-            generateBinaryExpression((BinaryExpression) expr, context, sql, joins);
+            generateBinaryExpression((BinaryExpression) expr, currentPath, sql);
         } else if (expr instanceof AggregateExpression) {
-            generateAggregateExpression((AggregateExpression) expr, context, sql, joins);
+            generateAggregateExpression((AggregateExpression) expr, currentPath, sql);
         } else if (expr instanceof QueryExpression) {
             generateQueryExpression((QueryExpression) expr, sql);
         } else if (expr instanceof LiteralExpression) {
@@ -141,13 +126,13 @@ public class SQLGenerator {
            .append(subqueryAlias);
     }
     
-    private void generateBinaryExpression(BinaryExpression expr, ReferenceAttribute context, StringBuilder sql, Set<JoinInfo> joins) {
+    private void generateBinaryExpression(BinaryExpression expr, DomainPath currentPath, StringBuilder sql) {
         sql.append("(");
-        generateExpression(expr.getLeft(), context, sql, joins);
+        generateExpression(expr.getLeft(), currentPath, sql);
         sql.append(" ")
            .append(getBinaryOperator(expr.getOperator()))
            .append(" ");
-        generateExpression(expr.getRight(), context, sql, joins);
+        generateExpression(expr.getRight(), currentPath, sql);
         sql.append(")");
     }
 
@@ -172,17 +157,24 @@ public class SQLGenerator {
         }
     }
 
-    private void generateFromClause(Query query, StringBuilder sql, Set<JoinInfo> joins) {
-        sql.append(" FROM ");
-        if (query.getSourceDomain() instanceof Query) {
-            // Handle case where source is another query
-            SQLGenerator subqueryGenerator = new SQLGenerator((Query) query.getSourceDomain());
-            sql.append("(")
-               .append(subqueryGenerator.generateSQL())
-               .append(") AS base");
-        } else {
-            sql.append(query.getSourceDomain().getName())
-            .append(" AS base");
+    private void generateFromClause(Query query, StringBuilder sql) {
+        joinContext.forEachJoin((path, alias) -> {
+            if (path.parent == null) {
+                sql.append(" FROM ");
+                generateTableNameAndAlias(path, alias, sql);
+            } else {
+                sql.append(" JOIN ");
+                generateTableNameAndAlias(path, alias, sql);
+                sql.append(" ON ");
+                generateExpression(path.reference.getJoinCondition(), path, sql);
+            }
+        });
+    }
+
+    private void generateTableNameAndAlias(DomainPath path, String alias, StringBuilder sql) {
+        sql.append(path.domain.getName());
+        if (alias != null && !alias.isEmpty() && !alias.equals(path.domain.getName())) {
+            sql.append(" AS ").append(alias);
         }
     }
 
@@ -202,51 +194,93 @@ public class SQLGenerator {
         return hasAggregate && hasNonAggregate;
     }
 
-    private void generateGroupByClause(Query query, StringBuilder sql, Set<JoinInfo> joins) {
+    private void generateGroupByClause(Query query, DomainPath rootPath, StringBuilder sql) {
         boolean first = true;
         for (Expression expr : query.getProjections().values()) {
             if (!expr.getType().isAggregate()) {
                 if (!first) sql.append(", ");
-                generateExpression(expr, null, sql, joins);
+                generateExpression(expr, rootPath, sql);
                 first = false;
             }
         }
     }
 
-    private void generateAggregateExpression(AggregateExpression expr, ReferenceAttribute context, StringBuilder sql, Set<JoinInfo> joins) {
+    private void generateAggregateExpression(AggregateExpression expr, DomainPath currentPath, StringBuilder sql) {
         sql.append(expr.getFunction().name())
            .append("(");
-        generateExpression(expr.getOperand(), context, sql, joins);
+        generateExpression(expr.getOperand(), currentPath, sql);
         sql.append(")");
     }
 
-    private String getOrCreateJoinAlias(ReferenceAttribute referenceAttribute) {
-        JoinInfo joinInfo = new JoinInfo(referenceAttribute, null);
-        return joinAliases.computeIfAbsent(joinInfo, ji -> "j" + (++aliasCounter));
-    }
+    public static class DomainPath {
+        final Domain domain;
+        final DomainPath parent;
+        final ReferenceAttribute reference;
 
-    private static class JoinInfo {
-        final ReferenceAttribute referenceAttribute;
-        final String alias;
+        DomainPath(Domain domain) {
+            this(domain, null, null);
+        }
 
-        JoinInfo(ReferenceAttribute referenceAttribute, String alias) {
-            this.referenceAttribute = referenceAttribute;
-            this.alias = alias;
+        DomainPath(Domain domain, DomainPath parent, ReferenceAttribute reference) {
+            this.domain = domain;
+            this.parent = parent;
+            this.reference = reference;
         }
 
         @Override
         public boolean equals(Object o) {
             if (this == o) return true;
-            if (!(o instanceof JoinInfo)) return false;
-            JoinInfo joinInfo = (JoinInfo) o;
-            // Alias is not part of equality
-            return referenceAttribute.equals(joinInfo.referenceAttribute);
+            if (!(o instanceof DomainPath)) return false;
+            DomainPath that = (DomainPath) o;
+            return Objects.equals(domain, that.domain) &&
+                   Objects.equals(parent, that.parent) &&
+                   Objects.equals(reference, that.reference);
         }
 
         @Override
         public int hashCode() {
-            // Alias is not part of hash
-            return Objects.hash(referenceAttribute);
+            return Objects.hash(domain, parent, reference);
+        }
+    }
+
+    public static class JoinContext {
+        private final Map<DomainPath, String> domainAliases = new LinkedHashMap<>();
+        private int aliasCounter = 0;
+
+        public String getOrCreateAlias(DomainPath path) {
+            String alias = domainAliases.computeIfAbsent(path, p -> {
+                return generateUniqueAlias(generateMeaningfullAlias(p));
+            });
+            addJoin(path, alias);
+            return alias;
+        }
+
+        private String generateUniqueAlias(String someAlias) {
+            if (domainAliases.containsValue(someAlias)) {
+                return someAlias + "_" + (++aliasCounter);
+            }
+            return someAlias;
+        }
+
+        private String generateMeaningfullAlias(DomainPath path) {
+            if (path.parent == null) {
+                return path.domain.getName();
+            } else {
+                return path.reference.getName();
+            }
+        }
+
+        private void addJoin(DomainPath path, String alias) {
+            domainAliases.putIfAbsent(path, alias);
+        }
+
+        public void forEachJoin(BiConsumer<DomainPath, String> consumer) {
+            domainAliases.entrySet().stream()
+                .forEach(e -> consumer.accept(e.getKey(), e.getValue()));
+        }
+
+        public Integer getAliasCount() {
+            return domainAliases.size();
         }
     }
 } 
