@@ -29,61 +29,54 @@ public class QueryBuilder {
     }
 
     private Expression buildAttributePath(String[] attributes) {
-        Domain currentDomain = sourceDomain;
-        Expression expression = null;
-
-        for (int i = 0; i < attributes.length; i++) {
-            String attrName = attributes[i];
-            Attribute attr = currentDomain.getAttribute(attrName);
-            
-            if (attr == null) {
-                throw new IllegalArgumentException(
-                    "Attribute '" + attrName + "' not found in domain " + currentDomain.getName()
-                );
-            }
-
-            Expression attrExpr = new AttributeExpression(attr);
-            
-            if (expression == null) {
-                expression = attrExpr;
-            } else {
-                expression = new ComposeExpression(expression, attrExpr);
-            }
-
-            // If not the last attribute, it must be a reference
-            if (i < attributes.length - 1) {
-                if (!(attr instanceof ReferenceAttribute)) {
-                    throw new IllegalArgumentException(
-                        "Attribute '" + attrName + "' in path must be a reference attribute"
-                    );
-                }
-                currentDomain = ((ReferenceAttribute) attr).getReferenceDomain();
-            }
-        }
-
-        return expression;
+        return buildAttributePathRecursive(sourceDomain, attributes, 0);
     }
 
-    public QueryBuilder whereEquals(String attributePath, Object value) {
-        String[] attributes = attributePath.split("\\.");
-        Expression pathExpr = buildAttributePath(attributes);
-        
-        // Get the type from the last attribute in the path
-        Domain currentDomain = sourceDomain;
-        for (int i = 0; i < attributes.length - 1; i++) {
-            Attribute attr = currentDomain.getAttribute(attributes[i]);
-            currentDomain = ((ReferenceAttribute) attr).getReferenceDomain();
+    private Expression buildAttributePathRecursive(Domain currentDomain, String[] attributes, int index) {
+        // Base case - no more attributes to process
+        if (index >= attributes.length) {
+            return null;
         }
-        Expression filter = new BinaryExpression(
-            pathExpr,
-            Operator.EQUALS,
-            new LiteralExpression(value)
-        );
-        return where(filter);
+
+        String attrName = attributes[index];
+        Attribute attr = currentDomain.getAttribute(attrName);
+        
+        if (attr == null) {
+            throw new IllegalArgumentException(
+                "Attribute '" + attrName + "' not found in domain " + currentDomain.getName()
+            );
+        }
+
+        Expression attrExpr = new AttributeExpression(attr);
+
+        // If this is the last attribute, return it directly
+        if (index == attributes.length - 1) {
+            return attrExpr;
+        }
+
+        // For intermediate attributes, verify it's a reference and recurse
+        if (!(attr instanceof ReferenceAttribute)) {
+            throw new IllegalArgumentException(
+                "Attribute '" + attrName + "' in path must be a reference attribute"
+            );
+        }
+
+        Domain nextDomain = ((ReferenceAttribute) attr).getReferenceDomain();
+        Expression remainingPath = buildAttributePathRecursive(nextDomain, attributes, index + 1);
+
+        return new ComposeExpression(attrExpr, remainingPath);
+    }
+
+    public QueryBuilder where(ExpressionBuilder exprBuilder) {
+        return where(exprBuilder.build(sourceDomain));
     }
 
     public QueryBuilder where(Expression filter) {
-        query.setFilter(filter);
+        if (query.getFilter() == null) {
+            query.setFilter(filter);
+        } else {
+            query.setFilter(new BinaryExpression(query.getFilter(), Operator.AND, filter));
+        }
         return this;
     }
 

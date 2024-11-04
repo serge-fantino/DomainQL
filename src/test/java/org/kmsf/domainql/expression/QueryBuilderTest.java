@@ -2,8 +2,9 @@ package org.kmsf.domainql.expression;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.kmsf.domainql.expression.type.Operator;
 import org.kmsf.domainql.expression.type.ScalarType;
-
+import static org.kmsf.domainql.expression.ExpressionBuilder.*;
 import static org.junit.jupiter.api.Assertions.*;
 
 public class QueryBuilderTest {
@@ -84,6 +85,19 @@ public class QueryBuilderTest {
     }
 
     @Test
+    void testSelectWithVeryLongPathToCheckCompositionIsInCorrectOrder() {
+        Query query = QueryBuilder.from("employeeQuery", employeeDomain)
+            .select("companyName", "department.company.name")
+            .build();
+
+        assertNotNull(query);
+        assertTrue(query.getProjections().containsKey("companyName"));
+        assertTrue(query.getProjections().get("companyName") instanceof ComposeExpression);
+        assertTrue(((ComposeExpression) query.getProjections().get("companyName")).getReference() instanceof AttributeExpression);
+        assertTrue(((AttributeExpression)((ComposeExpression) query.getProjections().get("companyName")).getReference()).getAttribute() instanceof ReferenceAttribute);
+    }
+
+    @Test
     void testSelectWithManagerPath() {
         Query query = QueryBuilder.from("employeeQuery", employeeDomain)
             .select("mgrName", "department.manager.firstName")
@@ -99,7 +113,7 @@ public class QueryBuilderTest {
     void testWhereEquals() {
         Query query = QueryBuilder.from("employeeQuery", employeeDomain)
             .select("firstName")
-            .whereEquals("active", true)
+            .where(EQUALS(attr("active"), literal(true)))
             .build();
 
         assertNotNull(query);
@@ -111,7 +125,7 @@ public class QueryBuilderTest {
     void testWhereEqualsWithComposedPath() {
         Query query = QueryBuilder.from("employeeQuery", employeeDomain)
             .select("firstName")
-            .whereEquals("department.code", "HR")
+            .where(EQUALS(attr("department.code"), literal("HR")))
             .build();
 
         assertNotNull(query);
@@ -127,13 +141,15 @@ public class QueryBuilderTest {
             .select("deptName", "department.name")
             .select("companyName", "department.company.name")
             .select("managerName", "department.manager.firstName")
-            .whereEquals("active", true)
-            .whereEquals("department.company.name", "Acme Corp")
+            .where(EQUALS(attr("active"), literal(true)))
+            .where(EQUALS(attr("department.company.name"), literal("Acme Corp")))
             .build();
 
         assertNotNull(query);
         assertEquals(5, query.getProjections().size());
         assertNotNull(query.getFilter());
+        assertTrue(query.getFilter() instanceof BinaryExpression);
+        assertTrue(((BinaryExpression)query.getFilter()).getOperator() == Operator.AND);
     }
 
     @Test

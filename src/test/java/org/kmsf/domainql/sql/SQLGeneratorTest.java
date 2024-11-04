@@ -2,15 +2,11 @@ package org.kmsf.domainql.sql;
 
 import org.kmsf.domainql.expression.Attribute;
 import org.kmsf.domainql.expression.AttributeExpression;
-import org.kmsf.domainql.expression.BinaryExpression;
 import org.kmsf.domainql.expression.Domain;
-import org.kmsf.domainql.expression.LiteralExpression;
 import org.kmsf.domainql.expression.ComposeExpression;
 import org.kmsf.domainql.expression.Query;
 import org.kmsf.domainql.expression.QueryBuilder;
-import org.kmsf.domainql.expression.ReferenceAttribute;
-import org.kmsf.domainql.expression.type.Operator;
-
+import static org.kmsf.domainql.expression.ExpressionBuilder.*;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.kmsf.domainql.expression.type.ScalarType;
@@ -146,36 +142,25 @@ public class SQLGeneratorTest {
         assertEquals(
             "SELECT person.first_name AS employee, works_for.name AS company, address.city AS city " +
             "FROM person " +
-            "JOIN company AS works_for ON (person.company_id = works_for.id)" +
-            "JOIN address AS address ON (works_for.address_id = address.id)",
+            "JOIN company AS works_for ON (person.company_id = works_for.id) " +
+            "JOIN address ON (works_for.address_id = address.id)",
             sql.trim()
         );
     }
-
+    
     @Test
     void testComposeExpressionWithFilter() {
-        // Create query with compose expression and filter
-        Query query = new Query("high_salary_companies", personDomain);
-        
-        // Add projections
-        ComposeExpression companyNameExpr = new ComposeExpression(
-            new AttributeExpression(personDomain.getAttribute("works_for")),
-            new AttributeExpression(companyDomain.getAttribute("name"))
-        );
-        query.addProjection("company", companyNameExpr);
-        
-        // Add filter on salary
-        query.setFilter(new BinaryExpression(
-            new AttributeExpression(personDomain.getAttribute("salary")),
-            Operator.GREATER_THAN,
-            new LiteralExpression(100000.0)
-        ));
-        
+        // Create query using QueryBuilder
+        Query query = QueryBuilder.from("high_salary_companies", personDomain)
+            .select("company", "works_for.name")
+            .where(GREATER_THAN(attr("salary"), literal(100000.0)))
+            .build();
+
         String sql = SQLGenerator.generateSQL(query);
         assertEquals(
-            "SELECT j1.name AS company " +
+            "SELECT works_for.name AS company " +
             "FROM person " +
-            "JOIN company ON (person.company_id = company.id) AS j1 " +
+            "JOIN company AS works_for ON (person.company_id = works_for.id) " +
             "WHERE (person.salary > 100000.0)",
             sql.trim()
         );
@@ -183,35 +168,55 @@ public class SQLGeneratorTest {
 
     @Test
     void testComposeExpressionWithComposeFilter() {
-        // Create query with compose expression and filter
-        Query query = new Query("kmsf_employees", personDomain);
-        query.addProjection("employee", new AttributeExpression(personDomain.getAttribute("first_name")));
-        ComposeExpression companyDepartmentExpr = new ComposeExpression(
-            new AttributeExpression(personDomain.getAttribute("department")),
-                new AttributeExpression(departmentDomain.getAttribute("name"))
-        );
-        ComposeExpression companyNameExpr = new ComposeExpression(
-            new AttributeExpression(personDomain.getAttribute("department")),
-            new ComposeExpression(
-                new AttributeExpression(departmentDomain.getAttribute("company")),
-                new AttributeExpression(companyDomain.getAttribute("name"))
-            )
-        );
-        query.addProjection("department", companyDepartmentExpr);
-        query.addProjection("company", companyNameExpr);
-        query.setFilter(new BinaryExpression(
-            companyNameExpr,
-            Operator.EQUALS,
-            new LiteralExpression("KMSF")
-        ));
-        
+        // Create query using QueryBuilder
+        Query query = QueryBuilder.from("kmsf_employees", personDomain)
+            .select("employee", "first_name")
+            .select("department", "department.name") 
+            .select("company", "department.company.name")
+            .where(EQUALS(attr("department.company.name"), literal("KMSF")))
+            .build();
+
         String sql = SQLGenerator.generateSQL(query);
         assertEquals(
-            "SELECT person.first_name AS employee, j1.name AS department, j2.name AS company " +
+            "SELECT person.first_name AS employee, department.name AS department, company.name AS company " +
             "FROM person " +
-            "JOIN department ON (person.department_id = department.id) AS j1 " +
-            "JOIN company ON (person.company_id = company.id) AS j2 " +
-            "WHERE (j2.name = 'KMSF')",
+            "JOIN department ON (person.department_id = department.id) " +
+            "JOIN company ON (department.company_id = company.id) " +
+            "WHERE (company.name = 'KMSF')",
+            sql.trim()
+        );
+    }
+
+    /*
+     * This test case demonstrates that the SQL generator correctly handles 
+     * a query that requires a specific join to be used in the WHERE clause.    
+     * 
+     * In this example, the query requires a join between person and company
+     * through department. Therefore, the generated SQL includes a JOIN between
+     * department and company.
+     * 
+     * If the SQL generator did not correctly handle this case, it would not
+     * include the required join and the query would be incorrect.  
+     * 
+     * That enforce that the order of generation of the SQL is independant from
+     * the order of the statements in the QueryBuilder.
+     */
+    @Test
+    void testQueryWithFilterThatRequiresSpecificJoin() {
+        // Create query using QueryBuilder
+        Query query = QueryBuilder.from("kmsf_employees", personDomain)
+            .select("employee", "first_name")
+            .select("department", "department.name") 
+            .where(EQUALS(attr("department.company.name"), literal("KMSF")))
+            .build();
+
+        String sql = SQLGenerator.generateSQL(query);
+        assertEquals(
+            "SELECT person.first_name AS employee, department.name AS department " +
+            "FROM person " +
+            "JOIN department ON (person.department_id = department.id) " +
+            "JOIN company ON (department.company_id = company.id) " +
+            "WHERE (company.name = 'KMSF')",
             sql.trim()
         );
     }

@@ -31,6 +31,11 @@ public class Domain {
         return attribute;
     }
 
+    public Domain withAttribute(String name, ScalarType type) {
+        addAttribute(name, type);
+        return this;
+    }
+
     public ReferenceAttribute addReference(String name, String sourceReference, Domain targetDomain, String targetReference) {
         Expression joinCondition;
         if (this.equals(targetDomain)) {
