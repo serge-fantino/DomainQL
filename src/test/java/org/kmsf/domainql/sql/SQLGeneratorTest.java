@@ -221,4 +221,23 @@ public class SQLGeneratorTest {
         );
     }
 
+    @Test
+    void testGroupBy() {
+        // remember that we don't need to specify the group by in the query
+        Query query = QueryBuilder.from("employee_companies", personDomain)
+            .select("department", "department.name")
+            .select("company", "department.company.name")
+            .select("total_budget", SUM(attr("salary")))
+            .build();
+
+        String sql = SQLGenerator.generateSQL(query);
+        assertEquals(
+            "SELECT department.name AS department, company.name AS company, SUM(person.salary) AS total_budget " +
+            "FROM person " +
+            "JOIN department ON (person.department_id = department.id) " +
+            "JOIN company ON (department.company_id = company.id) " +
+            "GROUP BY department.name, company.name", sql.trim()
+        );
+    }
+
 } 

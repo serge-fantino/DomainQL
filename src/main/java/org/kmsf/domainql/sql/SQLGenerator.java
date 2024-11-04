@@ -30,29 +30,35 @@ public class SQLGenerator {
     }
 
     public String generateSQL() {
-        StringBuilder sql = new StringBuilder("SELECT ");
 
         // initialize the root path
         DomainPath rootPath = new DomainPath(query.getSourceDomain());
         joinContext.getOrCreateAlias(rootPath);
 
         // Generate projections
-        generateProjections(sql, rootPath);
-        
-        // Generate FROM clause with necessary JOINs
-        generateFromClause(query, sql);
+        StringBuilder selectPart = new StringBuilder();
+        generateProjections(selectPart, rootPath);
 
         // Generate WHERE clause if filter exists
+        StringBuilder wherePart = new StringBuilder();
         if (query.getFilter() != null) {
-            sql.append(" WHERE ");
-            generateExpression(query.getFilter(), new SimplePathResolver(rootPath), sql);
+            wherePart.append(" WHERE ");
+            generateExpression(query.getFilter(), new SimplePathResolver(rootPath), wherePart);
         }
 
         // Generate GROUP BY if needed
+        StringBuilder groupByPart = new StringBuilder();
         if (needsGroupBy(query)) {
-            sql.append(" GROUP BY ");
-            generateGroupByClause(query, rootPath, sql);
+            groupByPart.append(" GROUP BY ");
+            generateGroupByClause(query, rootPath, groupByPart);
         }
+        
+        // Generate FROM clause with necessary JOINs
+        StringBuilder sql = new StringBuilder("SELECT ");
+        sql.append(selectPart);
+        generateFromClause(query, sql);
+        sql.append(wherePart);
+        sql.append(groupByPart);
 
         return sql.toString();
     }

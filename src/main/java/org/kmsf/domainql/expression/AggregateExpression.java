@@ -1,5 +1,6 @@
 package org.kmsf.domainql.expression;
 
+import org.kmsf.domainql.expression.type.AggregateType;
 import org.kmsf.domainql.expression.type.ExpressionType;
 import org.kmsf.domainql.expression.type.ScalarType;
 import org.kmsf.domainql.expression.type.SourceType;
@@ -46,10 +47,10 @@ public class AggregateExpression implements Expression {
     @Override
     public ExpressionType getType() {
         if (function.resultType != null) {
-            return function.resultType;
+            return new AggregateType(function.resultType);
         } else {
             // For MIN/MAX, use the type of the inner expression
-            return (ScalarType) operand.getType();
+            return new AggregateType((ScalarType) operand.getType());
         }
     }
 } 

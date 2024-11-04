@@ -28,6 +28,11 @@ public class QueryBuilder {
         return select(attributes[attributes.length - 1], attributePath);
     }
 
+    public QueryBuilder select(String alias, ExpressionBuilder exprBuilder) {
+        query.addProjection(alias, exprBuilder.build(sourceDomain));
+        return this;
+    }
+
     private Expression buildAttributePath(String[] attributes) {
         return buildAttributePathRecursive(sourceDomain, attributes, 0);
     }

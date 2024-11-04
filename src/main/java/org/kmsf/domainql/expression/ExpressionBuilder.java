@@ -1,5 +1,6 @@
 package org.kmsf.domainql.expression;
 
+import org.kmsf.domainql.expression.AggregateExpression.AggregateFunction;
 import org.kmsf.domainql.expression.type.*;
 
 public class ExpressionBuilder {
@@ -82,6 +83,32 @@ public class ExpressionBuilder {
 
     public static ExpressionBuilder gt(String attributePath, Object value) {
         return GREATER_THAN(attr(attributePath), literal(value));
+    }
+
+    // Aggregate functions
+    public static ExpressionBuilder COUNT(ExpressionBuilder operand) {
+        return new AggregateExpressionBuilder(operand, AggregateFunction.COUNT);
+    }
+
+    public static ExpressionBuilder SUM(ExpressionBuilder operand) {
+        return new AggregateExpressionBuilder(operand, AggregateFunction.SUM);
+    }
+
+    public static ExpressionBuilder AVG(ExpressionBuilder operand) {
+        return new AggregateExpressionBuilder(operand, AggregateFunction.AVG);
+    }
+
+    public static ExpressionBuilder MIN(ExpressionBuilder operand) {
+        return new AggregateExpressionBuilder(operand, AggregateFunction.MIN);
+    }
+
+    public static ExpressionBuilder MAX(ExpressionBuilder operand) {
+        return new AggregateExpressionBuilder(operand, AggregateFunction.MAX);
+    }
+
+    // Special case for COUNT(*)
+    public static ExpressionBuilder COUNT_ALL() {
+        return new AggregateExpressionBuilder(null, AggregateFunction.COUNT);
     }
 
     // Build the actual Expression
@@ -179,3 +206,19 @@ class BinaryExpressionBuilder extends ExpressionBuilder {
         );
     }
 } 
+
+class AggregateExpressionBuilder extends ExpressionBuilder {
+
+    private final ExpressionBuilder operand;
+    private final AggregateExpression.AggregateFunction function;
+
+    protected AggregateExpressionBuilder(ExpressionBuilder operand, AggregateExpression.AggregateFunction function) {
+        this.operand = operand;
+        this.function = function;
+    }
+
+    @Override
+    public Expression build(Domain rootDomain) {
+        return new AggregateExpression(operand.build(rootDomain), function);
+    }
+}

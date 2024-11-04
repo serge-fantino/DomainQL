@@ -2,6 +2,7 @@ package org.kmsf.domainql.expression;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.kmsf.domainql.expression.AggregateExpression.AggregateFunction;
 import org.kmsf.domainql.expression.type.Operator;
 import org.kmsf.domainql.expression.type.ScalarType;
 
@@ -158,5 +159,37 @@ class ExpressionBuilderTest {
         assertTrue(compareExpr.getLeft() instanceof BinaryExpression);
         BinaryExpression multiplyExpr = (BinaryExpression) compareExpr.getLeft();
         assertEquals(Operator.MULTIPLY, multiplyExpr.getOperator());
+    }
+
+    @Test
+    void testAggregateExpressions() {
+        // COUNT(*)
+        Expression countAll = COUNT_ALL().build(employeeDomain);
+        assertTrue(countAll instanceof AggregateExpression);
+        assertEquals(AggregateFunction.COUNT, ((AggregateExpression) countAll).getFunction());
+        assertNull(((AggregateExpression) countAll).getOperand());
+
+        // AVG(salary)
+        Expression avgSalary = AVG(attr("salary")).build(employeeDomain);
+        assertTrue(avgSalary instanceof AggregateExpression);
+        assertEquals(AggregateFunction.AVG, ((AggregateExpression) avgSalary).getFunction());
+        assertTrue(((AggregateExpression) avgSalary).getOperand() instanceof AttributeExpression);
+
+        // MAX(department.budget)
+        Expression maxBudget = MAX(attr("department.budget")).build(employeeDomain);
+        assertTrue(maxBudget instanceof AggregateExpression);
+        assertEquals(AggregateFunction.MAX, ((AggregateExpression) maxBudget).getFunction());
+        assertTrue(((AggregateExpression) maxBudget).getOperand() instanceof ComposeExpression);
+
+        // Complex case: SUM(salary) > AVG(department.budget)
+        Expression complexExpr = GREATER_THAN(
+            SUM(attr("salary")),
+            AVG(attr("department.budget"))
+        ).build(employeeDomain);
+
+        assertTrue(complexExpr instanceof BinaryExpression);
+        BinaryExpression binExpr = (BinaryExpression) complexExpr;
+        assertTrue(binExpr.getLeft() instanceof AggregateExpression);
+        assertTrue(binExpr.getRight() instanceof AggregateExpression);
     }
 } 
