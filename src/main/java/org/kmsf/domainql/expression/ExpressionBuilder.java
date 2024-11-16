@@ -219,6 +219,7 @@ class AggregateExpressionBuilder extends ExpressionBuilder {
 
     @Override
     public Expression build(Domain rootDomain) {
-        return new AggregateExpression(operand.build(rootDomain), function);
+        Expression operandExpr = operand == null ? null : operand.build(rootDomain);
+        return new AggregateExpression(operandExpr, function);
     }
 }

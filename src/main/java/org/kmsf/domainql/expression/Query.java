@@ -15,7 +15,8 @@ public class Query extends Domain {
     }
 
     public void addProjection(String alias, Expression expression) {
-        if (!expression.getSource().equals(sourceDomain.asDomainType())) {
+        // if source is not null, it means the expression is a constant expression
+        if (expression.getSource()!=null && !expression.getSource().equals(sourceDomain.asDomainType())) {
             throw new IllegalArgumentException(
                 "Expression source must match query source domain. " +
                 "Expected: " + sourceDomain.getName() + 
@@ -42,5 +43,13 @@ public class Query extends Domain {
 
     public void setFilter(Expression filter) {
         this.filter = filter;
+    }
+
+    @Override
+    public String toString() {
+        return "Query{" +
+            "name='" + getName() + '\'' +
+            ", sourceDomain=" + sourceDomain +
+            '}';
     }
 } 

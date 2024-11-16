@@ -7,6 +7,9 @@ import org.kmsf.domainql.expression.type.DomainType;
 import org.kmsf.domainql.expression.type.Operator;
 import org.kmsf.domainql.expression.type.ScalarType;
 
+import com.google.gson.JsonArray;
+import com.google.gson.JsonObject;
+
 public class Domain {
     private String name;
     private Map<String, Attribute> attributes;
@@ -73,5 +76,19 @@ public class Domain {
     
     public DomainType asDomainType() {
         return domainType;
+    }
+
+    @Override
+    public String toString() {
+        return "Domain{" + name + "}";
+    }
+
+    public JsonObject toJson() {
+        JsonObject json = new JsonObject();
+        json.addProperty("name", name);
+        JsonArray attributesArray = new JsonArray();
+        attributes.values().forEach(attr -> attributesArray.add(attr.toJson()));
+        json.add("attributes", attributesArray);
+        return json;
     }
 } 

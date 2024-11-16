@@ -16,4 +16,9 @@ public class CrossDomainType implements SourceType {
     public DomainType getRightDomain() {
         return rightDomain;
     }
+
+    @Override
+    public String toString() {
+        return leftDomain.toString() + " x " + rightDomain.toString();
+    }
 } 

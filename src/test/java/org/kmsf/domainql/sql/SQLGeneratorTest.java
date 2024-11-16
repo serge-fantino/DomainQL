@@ -240,4 +240,23 @@ public class SQLGeneratorTest {
         );
     }
 
+    @Test
+    void testGroupByWithReverseReference() {
+        departmentDomain.addReference("employee", "id", personDomain, "department_id");
+
+        Query query = QueryBuilder.from("employee_count_and_budget", departmentDomain)
+            .select("department", "name")
+            .select("employee_count", COUNT(attr("employee.id")))
+            .select("total_budget", SUM(attr("employee.salary")))
+            .build();
+
+        String sql = SQLGenerator.generateSQL(query);
+        assertEquals(
+            "SELECT department.name AS department, COUNT(employee.id) AS employee_count, SUM(employee.salary) AS total_budget " +
+            "FROM department " +
+            "JOIN person AS employee ON (department.id = employee.department_id) " +
+            "GROUP BY department.name", sql.trim()
+        );
+    }   
+
 } 

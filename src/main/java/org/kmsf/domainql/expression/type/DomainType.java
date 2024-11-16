@@ -26,4 +26,9 @@ public class DomainType implements ExpressionType, SourceType {
     public boolean equals(Object obj) {
         return obj instanceof DomainType && ((DomainType) obj).domain.equals(domain);
     }
+
+    @Override
+    public String toString() {
+        return domain.toString();
+    }
 } 

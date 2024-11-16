@@ -19,4 +19,9 @@ public class AggregateType implements ExpressionType {
 
     @Override
     public boolean isDomain() { return false; }
+
+    @Override
+    public String toString() {
+        return resultType.toString();
+    }
 } 

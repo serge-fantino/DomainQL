@@ -62,4 +62,9 @@ public class ScalarType implements ExpressionType {
         
         throw new IllegalArgumentException("Unsupported class type: " + class1.getName());
     }
+
+    @Override
+    public String toString() {
+        return baseType.toString();
+    }
 } 
