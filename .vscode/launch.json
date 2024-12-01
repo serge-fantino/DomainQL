@@ -6,6 +6,13 @@
     "configurations": [
         {
             "type": "java",
+            "name": "DomainQLSpringApplication",
+            "request": "launch",
+            "mainClass": "org.kmsf.domainql.spring.DomainQLSpringApplication",
+            "projectName": "domainql-spring"
+        },
+        {
+            "type": "java",
             "name": "Current File",
             "request": "launch",
             "mainClass": "${file}"

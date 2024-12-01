@@ -1,0 +1,14 @@
+CREATE SCHEMA IF NOT EXISTS DEMO;
+
+CREATE TABLE IF NOT EXISTS DEMO.departments (
+    id BIGINT PRIMARY KEY,
+    name VARCHAR(100) NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS DEMO.users (
+    id BIGINT PRIMARY KEY,
+    name VARCHAR(100) NOT NULL,
+    email VARCHAR(255) NOT NULL,
+    department_id BIGINT,
+    FOREIGN KEY (department_id) REFERENCES DEMO.departments(id)
+); 
