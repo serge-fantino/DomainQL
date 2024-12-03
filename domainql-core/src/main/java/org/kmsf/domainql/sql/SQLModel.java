@@ -88,6 +88,13 @@ public class SQLModel {
             return columns;
         }
 
+        public Column findColumn(String sqlName) {
+            return columns.stream()
+                .filter(column -> column.getSqlName().equals(sqlName))
+                .findFirst()
+                .orElseThrow(() -> new IllegalArgumentException("Column " + sqlName + " not found in table " + getQualifiedName()));
+        }
+
         public String toString() {
             return "Table{" +
                 "schema='" + schema + '\'' +

@@ -24,12 +24,21 @@ import org.kmsf.domainql.sql.SQLModel.ForeignKey;
  */
 public class SQLMapping {
 
-
     private final SQLModel sqlModel;
     private final DomainRegistry domainRegistry;
+    private final Map<Domain, SQLModel.Table> domainMapping = new HashMap<>();
+
     public SQLMapping(SQLModel sqlModel, DomainRegistry domainRegistry) {
         this.sqlModel = sqlModel;
         this.domainRegistry = domainRegistry;
+    }
+
+    public SQLModel.Table findDomainMappingTable(Domain domain) {
+        SQLModel.Table table = domainMapping.get(domain);
+        if (table == null) {
+            throw new IllegalArgumentException("No mapping found for domain " + domain.getName());
+        }
+        return table;
     }
     
     public String generateSQL(Expression expression) {
@@ -45,6 +54,7 @@ public class SQLMapping {
             String domainName = convertToCamelCase(table.getSqlName());
             Domain domain = new Domain(domainName);
             domainRegistry.register(domain);
+            domainMapping.put(domain, table);
             domainChanges.addChange(domain, DomainChangeSet.ChangeType.ADD_DOMAIN, null);
             for (SQLModel.Column column : table.getColumns()) {
                 String attributeName = convertToCamelCase(column.getSqlName());

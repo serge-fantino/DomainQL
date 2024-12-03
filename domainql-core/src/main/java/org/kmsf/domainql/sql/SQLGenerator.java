@@ -6,8 +6,10 @@ import org.kmsf.domainql.expression.BinaryExpression;
 import org.kmsf.domainql.expression.ComposeExpression;
 import org.kmsf.domainql.expression.Expression;
 import org.kmsf.domainql.expression.LiteralExpression;
+import org.kmsf.domainql.expression.MappingReference;
 import org.kmsf.domainql.expression.QueryExpression;
 import org.kmsf.domainql.expression.type.*;
+import org.kmsf.domainql.model.Attribute;
 import org.kmsf.domainql.model.Domain;
 import org.kmsf.domainql.model.Query;
 import org.kmsf.domainql.model.ReferenceAttribute;
@@ -15,18 +17,24 @@ import org.kmsf.domainql.model.ReferenceAttribute;
 import java.util.*;
 import java.util.function.BiConsumer;
 
+/**
+ * This class is used to generate a SQL query from a domainQL query and a SQLMapping.
+ * Domains and Attributes must be resolved against the SQLMapping's tables and columns.
+ */
 public class SQLGenerator {
     private final Query query;
+    private final SQLMapping sqlMapping;
     private final JoinContext joinContext;
     private int subqueryCounter = 0;
 
-    public SQLGenerator(Query query) {
+    public SQLGenerator(Query query, SQLMapping sqlMapping) {
         this.query = query;
+        this.sqlMapping = sqlMapping;
         this.joinContext = new JoinContext();
     }
 
     public static String generateSQL(Query query) {
-        SQLGenerator generator = new SQLGenerator(query);
+        SQLGenerator generator = new SQLGenerator(query, null);
         return generator.generateSQL();
     }
 
@@ -92,12 +100,30 @@ public class SQLGenerator {
             }
         } else if (expr instanceof AttributeExpression) {
             AttributeExpression attrExpr = (AttributeExpression) expr;
+            Attribute attribute = attrExpr.getAttribute();
+            Expression definition = attribute.getExpression();
+            if (definition instanceof MappingReference) {
+                MappingReference mappingReference = (MappingReference) definition;
+                String columReference = mappingReference.getName();
+                SQLModel.Column column = sqlMapping.findDomainMappingTable(attribute.getDomain()).findColumn(columReference);
+                DomainPath path = pathResolver.resolve(attrExpr);
+                String alias = joinContext.getOrCreateAlias(path);
+                sql.append(alias)
+                   .append(".")
+                   .append(column.getSqlName());
+                return;
+            } esle {
+
+            }
+        } else if (expr instanceof MappingReference) {
+            MappingReference mappingReference = (MappingReference) expr;
+            String columReference = mappingReference.getName();
+            SQLModel.Column column = sqlMapping.findDomainMappingTable(attribute.getDomain()).findColumn(columReference);
             DomainPath path = pathResolver.resolve(attrExpr);
             String alias = joinContext.getOrCreateAlias(path);
-            
             sql.append(alias)
                .append(".")
-               .append(attrExpr.getAttribute().getName());
+               .append(column.getSqlName());
             return;
         } else if (expr instanceof BinaryExpression) {
             generateBinaryExpression((BinaryExpression) expr, pathResolver, sql);
